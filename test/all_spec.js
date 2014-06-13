@@ -1,6 +1,7 @@
 /* global describe, before, beforeEach, it */
 
-var Sequelize = require('sequelize'),
+var _ = require('lodash'),
+    Sequelize = require('sequelize'),
     should = require('should'),
     passportLocalSequelize = require('../lib/passport-local-sequelize');
 
@@ -13,8 +14,30 @@ var db = new Sequelize('test-db', 'user', 'pass', {
 var User;
 
 var initDb = function (done) {
-    User = passportLocalSequelize.defineUser(db, null, {
-        iterations: 1000
+    User = passportLocalSequelize.defineUser(db, {
+        token: {
+            type: Sequelize.STRING,
+            allowNull: true
+        }
+    }, {
+        iterations: 1000,
+        defineOptions: {
+            instanceMethods: {
+                generateToken: function () {
+                    this.token = '1234';
+                }
+            },
+
+            classMethods: {
+                getByToken: function () {
+                    return this.find({
+                        where: {
+                            token: '1234'
+                        }
+                    });
+                }
+            }
+        }
     });
 
     // Authenticate the db
@@ -47,6 +70,7 @@ describe('Passport Local Sequelize', function () {
 
     it('can define a User schema for you', function () {
         should.exist(User);
+        _.isFunction(User.getByToken).should.equal(true);
     });
 
     it('can register and authenticate a user', function (done) {
@@ -76,7 +100,25 @@ describe('Passport Local Sequelize', function () {
 
                     authenticatedUser.get('username').should.equal('someuser');
 
-                    done();
+                    _.isFunction(authenticatedUser.generateToken).should.equal(true);
+
+                    authenticatedUser.generateToken();
+                    authenticatedUser.token.should.equal('1234');
+                    authenticatedUser.save()
+                        .success(function () {
+                            User.getByToken('1234')
+                                .success(function (found) {
+                                    found.get('username').should.equal('someuser');
+
+                                    done();
+                                })
+                                .error(function (err) {
+                                    done(err);
+                                });
+                        })
+                        .error(function (err) {
+                            done(err);
+                        });
                 });
             });
         });
